@@ -940,6 +940,7 @@ oracleBeginForeignScan(ForeignScanState *node, int eflags)
 		paramDesc->value = NULL;
 		paramDesc->node = expr;
 		paramDesc->bindh = NULL;
+		paramDesc->bindh2 = NULL;
 		paramDesc->colnum = -1;
 		paramDesc->next = fdw_state->paramList;
 		fdw_state->paramList = paramDesc;
@@ -956,6 +957,7 @@ oracleBeginForeignScan(ForeignScanState *node, int eflags)
 		paramDesc->value = NULL;
 		paramDesc->node = NULL;
 		paramDesc->bindh = NULL;
+		paramDesc->bindh2 = NULL;
 		paramDesc->colnum = -1;
 		paramDesc->next = fdw_state->paramList;
 		fdw_state->paramList = paramDesc;
@@ -1168,7 +1170,7 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 	ListCell *cell;
 	bool has_trigger = false, firstcol;
 	struct paramDesc *param;
-	char paramName[10];
+	char paramName[13];
 	TupleDesc tupdesc;
 	Bitmapset *tmpset;
 	AttrNumber col;
@@ -1305,7 +1307,7 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 	switch (operation)
 	{
 		case CMD_INSERT:
-			appendStringInfo(&sql, "INSERT INTO %s (", fdwState->oraTable->name);
+			appendStringInfo(&sql, "INSERT INTO %s a (", fdwState->oraTable->name);
 
 			firstcol = true;
 			for (i = 0; i < fdwState->oraTable->ncols; ++i)
@@ -1371,7 +1373,7 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 
 			break;
 		case CMD_UPDATE:
-			appendStringInfo(&sql, "UPDATE %s SET ", fdwState->oraTable->name);
+			appendStringInfo(&sql, "UPDATE %s a SET ", fdwState->oraTable->name);
 
 			firstcol = true;
 			i = 0;
@@ -1421,7 +1423,7 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 
 			break;
 		case CMD_DELETE:
-			appendStringInfo(&sql, "DELETE FROM %s", fdwState->oraTable->name);
+			appendStringInfo(&sql, "DELETE FROM %s a", fdwState->oraTable->name);
 
 			break;
 		default:
@@ -1468,7 +1470,12 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 			}
 			else
 				appendStringInfo(&sql, ", ");
-			appendStringInfo(&sql, "%s", fdwState->oraTable->cols[i]->name);
+			if (fdwState->oraTable->cols[i]->oratype == ORA_TYPE_GEOMETRY)
+				/* get both the WKB representation and the SRID */
+				appendStringInfo(&sql, "SDO_UTIL.TO_WKBGEOMETRY(%s), a.%s.sdo_srid",
+					fdwState->oraTable->cols[i]->name, fdwState->oraTable->cols[i]->name);
+			else
+				appendStringInfo(&sql, "%s", fdwState->oraTable->cols[i]->name);
 		}
 
 	/* add the parameters for the RETURNING clause */
@@ -1487,13 +1494,14 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 
 			/* create a new entry in the parameter list */
 			param = (struct paramDesc *)palloc(sizeof(struct paramDesc));
-			snprintf(paramName, 9, ":r%d", fdwState->oraTable->cols[i]->pgattnum);
+			snprintf(paramName, 12, ":r%d", fdwState->oraTable->cols[i]->pgattnum);
 			param->name = pstrdup(paramName);
 			param->type = fdwState->oraTable->cols[i]->pgtype;
 			param->bindType = BIND_OUTPUT;
 			param->value = NULL;
 			param->node = NULL;
 			param->bindh = NULL;
+			param->bindh2 = NULL;
 			param->colnum = i;
 			param->next = fdwState->paramList;
 			fdwState->paramList = param;
@@ -1505,7 +1513,16 @@ oraclePlanForeignModify(PlannerInfo *root, ModifyTable *plan, Index resultRelati
 			}
 			else
 				appendStringInfo(&sql, ", ");
+
 			appendStringInfo(&sql, "%s", paramName);
+
+			if (fdwState->oraTable->cols[i]->oratype == ORA_TYPE_GEOMETRY)
+			{
+				/* need to add an output parameter for the SRID */
+				snprintf(paramName, 12, ":srid%d", fdwState->oraTable->cols[i]->pgattnum);
+
+				appendStringInfo(&sql, ", %s", paramName);
+			}
 		}
 
 	fdwState->query = sql.data;

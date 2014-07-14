@@ -101,6 +101,7 @@ struct paramDesc
 	void *node;            /* the executable expression */
 	int colnum;            /* corresponding column in oraTable for output parameters */
 	void *bindh;           /* bind handle */
+	void *bindh2;          /* bind handle */
 	struct paramDesc *next;
 };
 

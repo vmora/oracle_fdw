@@ -113,6 +113,7 @@ static void allocHandle(dvoid **handlep, ub4 type, int isDescriptor, OCIEnv *env
 static void freeHandle(dvoid *handlep, struct connEntry *connp);
 static ub2 getOraType(oraType arg);
 static sb4 bind_out_callback(void *octxp, OCIBind *bindp, ub4 iter, ub4 index, void **bufpp, ub4 **alenp, ub1 *piecep, void **indp, ub2 **rcodep);
+static sb4 bind_srid_out_callback(void *octxp, OCIBind *bindp, ub4 iter, ub4 index, void **bufpp, ub4 **alenp, ub1 *piecep, void **indp, ub2 **rcodep);
 static sb4 bind_in_callback(void *ictxp, OCIBind *bindp, ub4 iter, ub4 index, void **bufpp, ub4 *alenp, ub1 *piecep, void **indpp);
 static void oracleWriteLob(oracleSession *session, OCILobLocator *locptr, char *value);
 
@@ -1971,6 +1972,39 @@ oracleExecuteQuery(oracleSession *session, const struct oraTable *oraTable, stru
 					"error executing query: OCIBindDynamic failed to bind callback for parameter",
 					oraMessage);
 			}
+
+			if (oraTable->cols[param->colnum]->oratype == ORA_TYPE_GEOMETRY)
+			{
+				/* we need to bind an output parameter for the SRID */
+				char *srid_name = oracleAlloc(strlen(param->name) + 4);
+				strcpy(srid_name, ":srid");
+				strcat(srid_name + 5, param->name + 2);
+
+				if (checkerr(
+					OCIBindByName(session->stmthp, (OCIBind **)&param->bindh2, session->envp->errhp, (text *)srid_name,
+						(sb4)strlen(srid_name), value, sizeof(int), SQLT_INT,
+						(dvoid *)&indicators[param_count], NULL, NULL, (ub4)0, NULL, oci_mode),
+					(dvoid *)session->envp->errhp, OCI_HTYPE_ERROR) != OCI_SUCCESS)
+				{
+					oracleError_d(FDW_UNABLE_TO_CREATE_EXECUTION,
+						"error executing query: OCIBindByName failed to bind SRID parameter",
+						oraMessage);
+				}
+
+				oracleFree(srid_name);
+
+				/* and we need a callback for it */
+				if (checkerr(
+					OCIBindDynamic((OCIBind *)param->bindh2, session->envp->errhp,
+						oraTable->cols[param->colnum], &bind_in_callback,
+						oraTable->cols[param->colnum], &bind_srid_out_callback),
+					(dvoid *)session->envp->errhp, OCI_HTYPE_ERROR) != OCI_SUCCESS)
+				{
+					oracleError_d(FDW_UNABLE_TO_CREATE_EXECUTION,
+						"error executing query: OCIBindDynamic failed to bind callback for srid parameter",
+						oraMessage);
+				}
+			}
 		}
 	}
 
@@ -2608,7 +2642,7 @@ bind_out_callback(void *octxp, OCIBind *bindp, ub4 iter, ub4 index, void **bufpp
 {
 	struct oraColumn *column = (struct oraColumn *)octxp;
 
-	if (column->oratype == ORA_TYPE_BLOB || column->oratype == ORA_TYPE_CLOB || column->oratype == ORA_TYPE_BFILE)
+	if (column->oratype == ORA_TYPE_BLOB || column->oratype == ORA_TYPE_CLOB || column->oratype == ORA_TYPE_BFILE || column->oratype == ORA_TYPE_GEOMETRY)
 	{
 		/* for LOBs, data should be written to the LOB locator */
 		*bufpp = *((OCILobLocator **)column->val);
@@ -2620,6 +2654,29 @@ bind_out_callback(void *octxp, OCIBind *bindp, ub4 iter, ub4 index, void **bufpp
 	}
 	column->val_len4 = (unsigned int)column->val_size;
 	*alenp = &(column->val_len4);
+	*indp = &(column->val_null);
+	*rcodep = NULL;
+
+	if (*piecep == OCI_ONE_PIECE)
+		return OCI_CONTINUE;
+	else
+		return OCI_ERROR;
+}
+
+/*
+ * bind_srid_out_callback
+ * 		Point Oracle to where it should write the srid for the output parameter.
+ */
+
+sb4
+bind_srid_out_callback(void *octxp, OCIBind *bindp, ub4 iter, ub4 index, void **bufpp, ub4 **alenp, ub1 *piecep, void **indp, ub2 **rcodep)
+{
+	struct oraColumn *column = (struct oraColumn *)octxp;
+	static ub4 length;
+
+	*bufpp = &column->srid;
+	length = sizeof(int);
+	*alenp = &length;  /* we don't care about the return value */
 	*indp = &(column->val_null);
 	*rcodep = NULL;
 
