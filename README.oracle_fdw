@@ -305,7 +305,7 @@ it to the client encoding.
 
 The data type "geometry" is only available when PostGIS is installed.
 When geometry data are converted to bytea, the WKB (well-known binary) format
-will be used.
+is used.  NULL values for SRID will be converted to 0.
 
 If you need conversions exceeding the above, define an appropriate view in
 Oracle or PostgreSQL.
@@ -520,6 +520,10 @@ is committed.  This cannot be avoided without using two-phase transactions
 and a transaction manager, which is clearly beyond what a foreign data wrapper
 can reasonably provide.
 Prepared statements involving Oracle are not supported for the same reason.
+
+To translate Oracle MDSYS.SDO_GEOMETRY to PostGIS geometry, it is converted
+to WKB (well-known binary) format using the function SDO_UTIL.TO_WKBGEOMETRY.
+This keeps things simple, but affects performance.
 
 8. Problems
 ===========

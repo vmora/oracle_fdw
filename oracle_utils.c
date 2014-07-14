@@ -1708,7 +1708,7 @@ oraclePrepareQuery(oracleSession *session, const char *query, const struct oraTa
 					if (checkerr(
 						OCIDefineByPos(session->stmthp, &defnhp, session->envp->errhp, (ub4)++col_pos,
 							(dvoid *)&oraTable->cols[i]->srid, (sb4)sizeof(int),
-							SQLT_INT, (dvoid *)&oraTable->cols[i]->val_null,
+							SQLT_INT, (dvoid *)&oraTable->cols[i]->srid_null,
 							&dummy_len, NULL, OCI_DEFAULT),
 						(dvoid *)session->envp->errhp, OCI_HTYPE_ERROR) != OCI_SUCCESS)
 					{
@@ -2677,7 +2677,7 @@ bind_srid_out_callback(void *octxp, OCIBind *bindp, ub4 iter, ub4 index, void **
 	*bufpp = &column->srid;
 	length = sizeof(int);
 	*alenp = &length;  /* we don't care about the return value */
-	*indp = &(column->val_null);
+	*indp = &(column->srid_null);
 	*rcodep = NULL;
 
 	if (*piecep == OCI_ONE_PIECE)

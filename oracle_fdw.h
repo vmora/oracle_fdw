@@ -68,6 +68,7 @@ struct oraColumn
 	unsigned int val_len4;   /* actual length of val - for bind callbacks */
 	short val_null;          /* indicator for NULL value */
 	int srid;                /* spatial reference system identifier (for geometry data) */
+	short srid_null;         /* indicator for NULL value */
 };
 
 struct oraTable

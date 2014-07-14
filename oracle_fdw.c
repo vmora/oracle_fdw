@@ -2172,6 +2172,8 @@ acquireSampleRowsFunc(Relation relation, int elevel, HeapTuple *rows, int targro
 			fdw_state->oraTable->cols[i]->val_len = 0;
 			fdw_state->oraTable->cols[i]->val_len4 = 0;
 			fdw_state->oraTable->cols[i]->val_null = 1;
+			fdw_state->oraTable->cols[i]->srid = 0;
+			fdw_state->oraTable->cols[i]->srid_null = 1;
 	
 			if (first_column)
 				first_column = false;
@@ -3704,7 +3706,7 @@ List
 		result = lappend(result, serializeInt(fdwState->oraTable->cols[i]->used));
 		result = lappend(result, serializeInt(fdwState->oraTable->cols[i]->pkey));
 		result = lappend(result, serializeLong(fdwState->oraTable->cols[i]->val_size));
-		/* don't serialize val, val_len, val_len4, val_null and srid */
+		/* don't serialize val, val_len, val_len4, val_null, srid and srid_null */
 	}
 	/* find length of parameter list */
 	for (param=fdwState->paramList; param; param=param->next)
@@ -3845,7 +3847,8 @@ struct OracleFdwState
 		state->oraTable->cols[i]->val_len = 0;
 		state->oraTable->cols[i]->val_len4 = 0;
 		state->oraTable->cols[i]->val_null = 1;
-		state->oraTable->cols[i]->srid = 1;
+		state->oraTable->cols[i]->srid = 0;
+		state->oraTable->cols[i]->srid_null = 1;
 	}
 
 	/* length of parameter list */
@@ -3964,6 +3967,7 @@ struct OracleFdwState
 		copy->oraTable->cols[i]->val_len4 = 0;
 		copy->oraTable->cols[i]->val_null = 0;
 		copy->oraTable->cols[i]->srid = 0;
+		copy->oraTable->cols[i]->srid_null = 0;
 	}
 	copy->startup_cost = 0.0;
 	copy->total_cost = 0.0;
@@ -4419,7 +4423,9 @@ convertTuple(struct OracleFdwState *fdw_state, Datum *values, bool *nulls, bool 
 			values[j] = OidFunctionCall2(
 							WKBFUNCOID,
 							PointerGetDatum(wkb),
-							Int32GetDatum((int32)fdw_state->oraTable->cols[index]->srid));
+							fdw_state->oraTable->cols[index]->srid_null == -1
+								? Int32GetDatum(0)  /* use 0 to translate a NULL Oracle SRID */
+								: Int32GetDatum((int32)fdw_state->oraTable->cols[index]->srid));
 
 			/* free the bytea */
 			pfree(wkb);
