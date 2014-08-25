@@ -2486,7 +2486,7 @@ disconnectServer(OCIEnv *envhp, OCIServer *srvhp)
 
 /*
  * removeEnvironment
- * 		Deallocate environment, error and service handle and remove cache entry.
+ * 		Deallocate environment and error handle and remove cache entry.
  */
 void
 removeEnvironment(OCIEnv *envhp)
